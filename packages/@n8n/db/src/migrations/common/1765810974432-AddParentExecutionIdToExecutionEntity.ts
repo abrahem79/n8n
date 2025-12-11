@@ -7,9 +7,9 @@ import type { MigrationContext, ReversibleMigration } from '../migration-types';
 export class AddParentExecutionIdToExecutionEntity1765810974432 implements ReversibleMigration {
 	async up({ schemaBuilder: { addColumns, column, createIndex } }: MigrationContext) {
 		await addColumns('execution_entity', [
-			column('parentExecutionId')
-				.varchar()
-				.comment('ID of the parent execution if this is a subworkflow (mode=integrated)'),
+			column('parentExecutionId').int.comment(
+				'ID of the parent execution if this is a subworkflow (mode=integrated)',
+			),
 		]);
 		await createIndex('execution_entity', ['parentExecutionId']);
 	}
