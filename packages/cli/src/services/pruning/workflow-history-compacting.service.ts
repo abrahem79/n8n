@@ -1,7 +1,7 @@
 import { Logger } from '@n8n/backend-common';
 import { ExecutionsConfig } from '@n8n/config';
 import { Time } from '@n8n/constants';
-import { ExecutionRepository, DbConnection } from '@n8n/db';
+import { ExecutionRepository, DbConnection, WorkflowHistoryRepository } from '@n8n/db';
 import { OnLeaderStepdown, OnLeaderTakeover, OnShutdown } from '@n8n/decorators';
 import { Service } from '@n8n/di';
 import { BinaryDataService, InstanceSettings } from 'n8n-core';
@@ -28,16 +28,13 @@ export class WorkflowHistoryCompactingService {
 	/** Timeout for next hard-deletion of soft-deleted executions. */
 	private hardDeletionTimeout: NodeJS.Timeout | undefined;
 
-	private minimumCompactAgeMs = 10 * 1000 * 60;
-	private compactingTimeRangeMs = 8 * 1000 * 60 * 60 * 24;
+	private minimumCompactAgeHours = 24;
+	private compactingTimeRangeDays = 2;
 
 	private readonly rates = {
-		softDeletion: this.executionsConfig.pruneDataIntervals.softDelete * Time.minutes.toMilliseconds,
-		hardDeletion: this.executionsConfig.pruneDataIntervals.hardDelete * Time.minutes.toMilliseconds,
+		// softDeletion: this.executionsConfig.pruneDataIntervals.softDelete * Time.minutes.toMilliseconds,
+		hardDeletion: this.compactingTimeRangeDays * Time.days.toMilliseconds,
 	};
-
-	/** Max number of executions to hard-delete in a cycle. */
-	private readonly batchSize = 100;
 
 	private isShuttingDown = false;
 
@@ -45,11 +42,10 @@ export class WorkflowHistoryCompactingService {
 		private readonly logger: Logger,
 		private readonly instanceSettings: InstanceSettings,
 		private readonly dbConnection: DbConnection,
-		private readonly executionRepository: ExecutionRepository,
-		private readonly binaryDataService: BinaryDataService,
+		private readonly workflowHistoryRepository: WorkflowHistoryRepository,
 		private readonly executionsConfig: ExecutionsConfig,
 	) {
-		this.logger = this.logger.scoped('pruning');
+		this.logger = this.logger.scoped('history-compacting');
 	}
 
 	init() {
@@ -111,7 +107,7 @@ export class WorkflowHistoryCompactingService {
 
 	/** Soft-delete executions based on max age and/or max count. */
 	async softDelete() {
-		const result = await this.executionRepository.softDeletePrunableExecutions();
+		const result = await this.workflowHistoryRepository.pruneHistory();
 
 		if (result.affected === 0) {
 			this.logger.debug('Found no executions to soft-delete');
@@ -133,31 +129,43 @@ export class WorkflowHistoryCompactingService {
 	 * @returns Delay in milliseconds until next hard-deletion
 	 */
 	private async hardDelete(): Promise<number> {
-		const ids = await this.executionRepository.findSoftDeletedExecutions();
+		const startDate = new Date();
+		startDate.setHours(startDate.getHours() - this.minimumCompactAgeHours);
+		startDate.setDate(startDate.getDate() - this.compactingTimeRangeDays);
 
-		const executionIds = ids.map((o) => o.executionId);
+		const endDate = new Date();
+		endDate.setHours(endDate.getHours() - this.minimumCompactAgeHours);
 
-		if (executionIds.length === 0) {
-			this.logger.debug('Found no executions to hard-delete');
+		const workflowIds = await this.workflowHistoryRepository.getWorkflowIdsInRange(
+			startDate,
+			endDate,
+		);
 
-			return this.rates.hardDeletion;
+		let seenSum = 0;
+		for (let i = 0; i < workflowIds.length; ++i) {
+			const workflowId = workflowIds[i];
+			try {
+				const { seen, deleted } = await this.workflowHistoryRepository.pruneHistory(
+					workflowId,
+					startDate,
+					endDate,
+				);
+				seenSum += seen;
+
+				this.logger.debug(
+					`Deleted ${deleted} of ${seen} versions of workflow ${workflowId} between ${startDate.toISOString()} and ${endDate.toISOString()}`,
+				);
+			} catch (error) {
+				this.logger.error(`Failed to prune version history of workflow ${workflowId}`, {
+					error: ensureError(error),
+				});
+			}
+
+			if (seenSum > 10000) {
+				await new Promise((res) => setTimeout(res, 1000));
+				seenSum = 0;
+			}
 		}
-
-		try {
-			await this.binaryDataService.deleteMany(ids);
-
-			await this.executionRepository.deleteByIds(executionIds);
-
-			this.logger.debug('Hard-deleted executions', { executionIds });
-		} catch (error) {
-			this.logger.error('Failed to hard-delete executions', {
-				executionIds,
-				error: ensureError(error),
-			});
-		}
-
-		// if high volume, speed up next hard-deletion
-		if (executionIds.length >= this.batchSize) return 1 * Time.seconds.toMilliseconds;
 
 		return this.rates.hardDeletion;
 	}

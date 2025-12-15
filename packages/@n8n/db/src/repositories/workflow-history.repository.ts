@@ -51,7 +51,7 @@ export class WorkflowHistoryRepository extends Repository<WorkflowHistory> {
 	private minimumCompactAgeHours = 24;
 	private compactingTimeRangeDays = 8;
 
-	makeSkipActiveAndNamedVersionsRule(activeVersions: string[]) {
+	private makeSkipActiveAndNamedVersionsRule(activeVersions: string[]) {
 		return (
 			prev: GroupedWorkflowHistory<WorkflowHistory>,
 			_next: GroupedWorkflowHistory<WorkflowHistory>,
@@ -61,17 +61,32 @@ export class WorkflowHistoryRepository extends Repository<WorkflowHistory> {
 			activeVersions.includes(prev.to.versionId);
 	}
 
-	async pruneHistory(now = new Date()): Promise<number> {
-		const endDate = new Date(now);
-		endDate.setHours(endDate.getHours() - this.minimumCompactAgeHours);
-
-		const startDate = new Date(now);
-		startDate.setHours(endDate.getHours() - this.minimumCompactAgeHours);
-		startDate.setDate(startDate.getDate() - this.compactingTimeRangeDays);
-
-		const allVersions = await this.manager
+	async getWorkflowIdsInRange(startDate: Date, endDate: Date) {
+		const result = await this.manager
 			.createQueryBuilder(WorkflowHistory, 'wh')
+			.select('DISTINCT wh.workflowId')
 			.where('wh.createdAt <= :endDate', {
+				endDate: DateUtils.mixedDateToUtcDatetimeString(endDate),
+			})
+			.andWhere('wh.createdAt >= :startDate', {
+				startDate: DateUtils.mixedDateToUtcDatetimeString(startDate),
+			})
+			.getMany();
+		return result.map((x) => x.workflowId);
+	}
+
+	/**
+	 * @returns The amount of seen and deleted versions
+	 */
+	async pruneHistory(
+		workflowId: string,
+		startDate: Date,
+		endDate: Date,
+	): Promise<{ seen: number; deleted: number }> {
+		const workflows = await this.manager
+			.createQueryBuilder(WorkflowHistory, 'wh')
+			.where('wh.workflowId == :workflowId', { workflowId })
+			.andWhere('wh.createdAt <= :endDate', {
 				endDate: DateUtils.mixedDateToUtcDatetimeString(endDate),
 			})
 			.andWhere('wh.createdAt >= :startDate', {
@@ -81,31 +96,21 @@ export class WorkflowHistoryRepository extends Repository<WorkflowHistory> {
 			.getMany();
 
 		// Group by workflowId
-		const groupedByWorkflowId = allVersions.reduce((acc, version) => {
-			const workflowId = version.workflowId;
-			if (!acc.has(workflowId)) {
-				acc.set(workflowId, []);
-			}
-			acc.get(workflowId)!.push(version);
-			return acc;
-		}, new Map<string, WorkflowHistory[]>());
 
 		const versionsToDelete = [];
-		for (const [workflowId, workflows] of groupedByWorkflowId.entries()) {
-			const publishedVersions =
-				await this.workflowPublishHistoryRepository.getPublishedVersions(workflowId);
-			const grouped = groupWorkflows<WorkflowHistory>(
-				workflows,
-				[RULES.mergeAdditiveChanges],
-				[this.makeSkipActiveAndNamedVersionsRule(publishedVersions.map((x) => x.versionId))],
-			);
-			for (const group of grouped) {
-				for (const wf of group.groupedWorkflows) {
-					versionsToDelete.push(wf.versionId);
-				}
+		const publishedVersions =
+			await this.workflowPublishHistoryRepository.getPublishedVersions(workflowId);
+		const grouped = groupWorkflows<WorkflowHistory>(
+			workflows,
+			[RULES.mergeAdditiveChanges],
+			[this.makeSkipActiveAndNamedVersionsRule(publishedVersions.map((x) => x.versionId))],
+		);
+		for (const group of grouped) {
+			for (const wf of group.groupedWorkflows) {
+				versionsToDelete.push(wf.versionId);
 			}
 		}
 		await this.delete({ versionId: In(versionsToDelete) });
-		return versionsToDelete.length;
+		return { seen: workflows.length, deleted: versionsToDelete.length };
 	}
 }
