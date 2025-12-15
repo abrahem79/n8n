@@ -259,5 +259,6 @@ export const postgresMigrations: Migration[] = [
 	BackfillMissingWorkflowHistoryRecords1765448186933,
 	AddResolvableFieldsToCredentials1765459448000,
 	AddIconToAgentTable1765788427674,
+	ConvertAgentIdToUuid1765804780000,
 	AddParentExecutionIdToExecutionEntity1765810974432,
 ];
