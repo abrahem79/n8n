@@ -258,5 +258,6 @@ export const postgresMigrations: Migration[] = [
 	AddDynamicCredentialEntryTable1764689388394,
 	BackfillMissingWorkflowHistoryRecords1765448186933,
 	AddResolvableFieldsToCredentials1765459448000,
+	AddIconToAgentTable1765788427674,
 	AddParentExecutionIdToExecutionEntity1765810974432,
 ];
