@@ -458,7 +458,7 @@ async function createN8NInstances({
 				? `${uniqueProjectName}-n8n-main-${instanceNumber}`
 				: `${uniqueProjectName}-n8n`;
 		const networkAlias = mainCount > 1 ? name : `${uniqueProjectName}-n8n-main-1`;
-		return createN8NContainer({
+		return await createN8NContainer({
 			name,
 			uniqueProjectName,
 			environment,
@@ -478,7 +478,7 @@ async function createN8NInstances({
 	const workerPromises = Array.from({ length: workerCount }, async (_, i) => {
 		const instanceNumber = i + 1;
 		const name = `${uniqueProjectName}-n8n-worker-${instanceNumber}`;
-		return createN8NContainer({
+		return await createN8NContainer({
 			name,
 			uniqueProjectName,
 			environment,
