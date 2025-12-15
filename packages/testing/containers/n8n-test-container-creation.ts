@@ -451,7 +451,7 @@ async function createN8NInstances({
 	// Create main instances in parallel - PostgreSQL advisory locks prevent
 	// concurrent migration conflicts (see db-connection.ts)
 	log(`Starting ${mainCount} main instance(s) in parallel...`);
-	const mainPromises = Array.from({ length: mainCount }, (_, i) => {
+	const mainPromises = Array.from({ length: mainCount }, async (_, i) => {
 		const instanceNumber = i + 1;
 		const name =
 			mainCount > 1
@@ -475,7 +475,7 @@ async function createN8NInstances({
 
 	// Create worker instances in parallel - workers don't run migrations
 	log(`Starting ${workerCount} worker instance(s) in parallel...`);
-	const workerPromises = Array.from({ length: workerCount }, (_, i) => {
+	const workerPromises = Array.from({ length: workerCount }, async (_, i) => {
 		const instanceNumber = i + 1;
 		const name = `${uniqueProjectName}-n8n-worker-${instanceNumber}`;
 		return createN8NContainer({
