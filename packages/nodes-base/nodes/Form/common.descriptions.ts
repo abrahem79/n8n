@@ -551,6 +551,7 @@ export const formFields: INodeProperties = {
 
 // Dynamic form fields - shown when useDynamicAttributes feature is enabled
 // Separate export to allow independent development of new form field features
+// Uses optionalFields typeOption to hide some fields behind "Add Option" dropdown
 export const formFieldsDynamic: INodeProperties = {
 	displayName: 'Form Elements',
 	name: 'formFields',
@@ -565,6 +566,7 @@ export const formFieldsDynamic: INodeProperties = {
 	typeOptions: {
 		multipleValues: true,
 		sortable: true,
+		optionalFields: ['fieldName', 'defaultValue', 'fieldValue', 'requiredField'],
 	},
 	options: [
 		{

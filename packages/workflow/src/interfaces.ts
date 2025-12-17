@@ -1480,6 +1480,7 @@ export interface INodePropertyTypeOptions {
 	assignment?: AssignmentTypeOptions;
 	minRequiredFields?: number; // Supported by: fixedCollection
 	maxAllowedFields?: number; // Supported by: fixedCollection
+	optionalFields?: string[]; // Supported by: fixedCollection - fields hidden behind "Add Option" dropdown
 	calloutAction?: CalloutAction; // Supported by: callout
 	binaryDataProperty?: boolean; // Indicate that the property expects binary data
 	[key: string]: any;
